@@ -58,13 +58,39 @@ import express, { type Request,type Response } from "express";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
+import cors from "cors";
 import { fileURLToPath } from "url";
+import { randomBytes } from 'node:crypto';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(cors());
 app.use(express.json());
+
+
+/**
+ * Generates a random, unique, and short identifier.
+ *
+ * This function creates a cryptographically strong, URL-friendly ID.
+ * It generates random bytes and encodes them as a hexadecimal string.
+ *
+ * @param length - The desired final length of the ID string. The default is 8.
+ * @returns A string representing the unique ID.
+ */
+function generateUniqueId(length: number = 8): string {
+  // Each byte of random data is represented by two hexadecimal characters.
+  // So, we need to generate half the desired length in bytes.
+  // Math.ceil is used to handle odd lengths.
+  const byteLength = Math.ceil(length / 2);
+
+  const buffer = randomBytes(byteLength); [5]
+  
+  // Convert the buffer to a hex string and slice to the desired length. [1, 3]
+  return buffer.toString('hex').slice(0, length);
+}
 
 // Types
 type Client = any;
@@ -298,9 +324,10 @@ function requireAuth(req: Request, res: Response, next: Function) {
 // API Endpoints
 
 // Initialize a new WhatsApp session
-app.post("/api/session/init/:userId", async (req: Request, res: Response) => {
+app.post("/api/session/init", async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    // const { userId } = req.bod;
+    const userId = generateUniqueId();
 
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
