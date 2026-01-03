@@ -58,7 +58,7 @@ import express, { type Request,type Response } from "express";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
-import cors from "cors";
+// import cors from "cors";
 import { fileURLToPath } from "url";
 import { randomBytes } from 'node:crypto';
 
@@ -67,7 +67,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
+// app.use(cors());
 app.use(express.json());
 
 
@@ -283,7 +283,7 @@ async function initializeClient(userId: string): Promise<Client> {
   client.on("message_create", (message: any) => {
     console.log(`📨 Message from ${userId}:`, {
       from: message.from,
-      body: message.body?.substring(0, 50),
+      body: message.body,
     });
   });
 
@@ -387,6 +387,7 @@ app.get("/api/session/qr/:userId", async (req: Request, res: Response) => {
         status: clientData.status,
       });
     }
+    console.error("Fetched QR for userId: ", userId);
 
     res.json({
       qrCode: clientData.qrCode,
@@ -500,6 +501,45 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
     });
   }
 });
+
+app.post("/api/message/send-many", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { userId, phones, message } = req.body;
+
+    if (!phones || !message) {
+      return res.status(400).json({
+        error: "phone and message are required",
+      });
+    }
+
+    const clientData = clients.get(userId)!;
+    const sentMessagesPromiseArr: Promise<any>[] = [];
+    phones.forEach(()=> {
+      const chatId = phones.replace(/[^\d]/g, "") + "@c.us";
+      const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, message)
+      sentMessagesPromiseArr.push(sentMessagePromise);
+    })
+    // Format phone number (country code + number without + or spaces)
+    Promise.allSettled(sentMessagesPromiseArr).then(
+      (results)=> {
+        console.log(results);
+      }
+    ).catch((e)=> {
+      console.log("Error occured in send-many route")
+    })
+
+    res.json({
+      success: true,
+    });
+  } catch (error: any) {
+    console.error("Send message error:", error);
+    res.status(500).json({
+      error: "Failed to send message",
+      details: error.message,
+    });
+  }
+});
+
 
 // Send message with image
 app.post("/api/message/send-media", requireAuth, async (req: Request, res: Response) => {
