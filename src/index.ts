@@ -514,8 +514,8 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
 
     const clientData = clients.get(userId)!;
     const sentMessagesPromiseArr: Promise<any>[] = [];
-    phones.forEach(()=> {
-      const chatId = phones.replace(/[^\d]/g, "") + "@c.us";
+    phones.forEach((item: String)=> {
+      const chatId = item.replace(/[^\d]/g, "") + "@c.us";
       const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, message)
       sentMessagesPromiseArr.push(sentMessagePromise);
     })
@@ -655,7 +655,7 @@ process.on("SIGINT", async () => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3456;
 
 app.listen(PORT, async () => {
   console.log(`\n🚀 WhatsApp API Server running on port ${PORT}`);
