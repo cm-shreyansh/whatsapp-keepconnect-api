@@ -540,6 +540,60 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
   }
 });
 
+app.post("/api/message/send-many-image", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { userId, phones, message , imageUrl} = req.body;
+
+    if (!phones || !message) {
+      return res.status(400).json({
+        error: "phone and message are required",
+      });
+    }
+
+    const clientData = clients.get(userId)!;
+    const sentMessagesPromiseArr: Promise<any>[] = [];
+
+        // Fetch image and convert to base64
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.statusText}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    const mimeType = response.headers.get("content-type") || "image/jpeg";
+
+    const media = new MessageMedia(mimeType, base64);
+  
+
+    phones.forEach((item: String)=> {
+      const chatId = item.replace(/[^\d]/g, "") + "@c.us";
+      const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, media, {
+        caption: message || "",
+      });
+      sentMessagesPromiseArr.push(sentMessagePromise);
+    });
+    // Format phone number (country code + number without + or spaces)
+    Promise.allSettled(sentMessagesPromiseArr).then(
+      (results)=> {
+        console.log(results);
+      }
+    ).catch((e)=> {
+      console.log("Error occured in send-many route")
+    })
+
+    res.json({
+      success: true,
+    });
+  } catch (error: any) {
+    console.error("Send message error:", error);
+    res.status(500).json({
+      error: "Failed to send message",
+      details: error.message,
+    });
+  }
+});
+
 
 // Send message with image
 app.post("/api/message/send-media", requireAuth, async (req: Request, res: Response) => {
