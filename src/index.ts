@@ -276,6 +276,8 @@ async function initializeClient(userId: string): Promise<Client> {
     if (data) {
       data.status = "disconnected";
     }
+    const currentClient = clients.get(userId);
+    currentClient?.client.destroy();
     clients.delete(userId);
     saveSessionMetadata();
   });
@@ -326,7 +328,7 @@ function requireAuth(req: Request, res: Response, next: Function) {
 // Initialize a new WhatsApp session
 app.post("/api/session/init", async (req: Request, res: Response) => {
   try {
-    // const { userId } = req.bod;
+    // const { userId } = req.body;
     const userId = generateUniqueId();
 
     if (!userId) {
