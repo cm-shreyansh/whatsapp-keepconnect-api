@@ -490,10 +490,18 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
 
     const clientData = clients.get(userId)!;
 
-    // Format phone number (country code + number without + or spaces)
-    const chatId = phone.replace(/[^\d]/g, "") + "@c.us";
-    const sentMessage = await clientData.client.sendMessage(chatId, message);
 
+    let digits = phone.replace(/\D/g, "");
+
+    // If it's a 10-digit Indian number, prepend country code 91
+    if (digits.length === 10) {
+      digits = "91" + digits;
+    }
+
+    // Format phone number (country code + number without + or spaces)
+    const chatId = digits + "@c.us";
+    const sentMessage = await clientData.client.sendMessage(chatId, message);
+  
     res.json({
       success: true,
       message: "Message sent successfully",
