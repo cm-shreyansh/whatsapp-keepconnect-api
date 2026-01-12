@@ -61,7 +61,8 @@ import path from "path";
 // import cors from "cors";
 import { fileURLToPath } from "url";
 import { randomBytes } from 'node:crypto';
-
+import chatbotRouter, { handleChatbotMessage } from './chatbot.js';
+import 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,7 +71,8 @@ const app = express();
 // app.use(cors());
 app.use(express.json());
 
-
+// Mount chatbot routes
+app.use('/api', chatbotRouter)
 /**
  * Generates a random, unique, and short identifier.
  *
@@ -282,11 +284,14 @@ async function initializeClient(userId: string): Promise<Client> {
     saveSessionMetadata();
   });
 
-  client.on("message_create", (message: any) => {
+  client.on("message_create", async (message: any) => {
     console.log(`📨 Message from ${userId}:`, {
       from: message.from,
       body: message.body,
     });
+
+        // Handle chatbot response
+    await handleChatbotMessage(userId, message, client);
   });
 
   await client.initialize();
@@ -689,6 +694,13 @@ app.get("/", (req: Request, res: Response) => {
       "POST /api/message/send-media",
       "GET /api/sessions",
       "GET /api/health",
+        "--- CHATBOT ENDPOINTS ---",
+      "POST /api/chatbot",
+      "GET /api/chatbot/:userId",
+      "POST /api/chatbot/option",
+      "DELETE /api/chatbot/option/:userId/:optionKey",
+      "PATCH /api/chatbot/:userId/toggle",
+      "DELETE /api/chatbot/:userId",
     ],
   });
 });
