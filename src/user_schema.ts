@@ -1,0 +1,23 @@
+import { 
+  pgTable, 
+  serial, 
+  text, 
+  varchar, 
+  timestamp, 
+  integer, 
+  index, 
+  foreignKey 
+} from "drizzle-orm/pg-core";
+
+// --- Users Table ---
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  emailVerifiedAt: timestamp("email_verified_at", { mode: 'date' }),
+  password: varchar("password", { length: 255 }).notNull(),
+  rememberToken: varchar("remember_token", { length: 100 }),
+  chatbotId: varchar("chatbot_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

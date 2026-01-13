@@ -62,8 +62,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from 'node:crypto';
 import chatbotRouter, { handleChatbotMessage } from './chatbot.js';
-import 'dotenv';
+import { auth } from "./middleware/auth.js";
+import dotenv from 'dotenv' ;
 
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -73,6 +75,10 @@ app.use(express.json());
 
 // Mount chatbot routes
 app.use('/api', chatbotRouter)
+
+app.get("/yeaboi", auth, (req, res) => {
+  res.json({"data": "INTERNAL POINTER VARIABLE"});
+});
 /**
  * Generates a random, unique, and short identifier.
  *
@@ -285,10 +291,10 @@ async function initializeClient(userId: string): Promise<Client> {
   });
 
   client.on("message_create", async (message: any) => {
-    console.log(`📨 Message from ${userId}:`, {
-      from: message.from,
-      body: message.body,
-    });
+    // console.log(`📨 Message from ${userId}:`, {
+    //   from: message.from,
+    //   body: message.body,
+    // });
 
         // Handle chatbot response
     await handleChatbotMessage(userId, message, client);
@@ -702,7 +708,7 @@ app.get("/", (req: Request, res: Response) => {
       "POST /api/message/send-media",
       "GET /api/sessions",
       "GET /api/health",
-        "--- CHATBOT ENDPOINTS ---",
+      "--- CHATBOT ENDPOINTS ---",
       "POST /api/chatbot",
       "GET /api/chatbot/:userId",
       "POST /api/chatbot/option",

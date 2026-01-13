@@ -8,7 +8,7 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'whatsapp_bot',
+  database: process.env.DB_NAME || 'whatsapp_chatbot',
 });
 
 // Create Drizzle instance

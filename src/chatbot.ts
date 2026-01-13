@@ -1,10 +1,12 @@
 import { Router, type Request,type Response } from 'express';
 import { db } from './db.js'; // Your Drizzle DB instance
 import { chatbots, chatbotOptions, conversationStates } from './chatbot_schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
+import { auth } from "./middleware/auth.js";
 import pkg from 'whatsapp-web.js';
 import 'dotenv';
+import { users } from './user_schema.js';
 
 const { MessageMedia } = pkg;
 
@@ -53,8 +55,25 @@ export async function handleChatbotMessage(
     if(!activeChatbot) return;
     // Check if it's a greeting
     if (isGreeting(messageBody)) {
-      await message.reply(activeChatbot.welcomeMessage);
-      
+
+      if(activeChatbot.mediaUrl) {
+         const response = await fetch(activeChatbot.mediaUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch media: ${response.statusText}`);
+          }
+
+          const buffer = await response.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString('base64');
+          const mimeType = response.headers.get('content-type') || 'image/jpeg';
+
+          const media = new MessageMedia(mimeType, base64);
+          await client.sendMessage(chatId, media, {
+            caption: `${activeChatbot.welcomeMessage}`,
+          });
+      } else {
+        await message.reply(activeChatbot.welcomeMessage);
+      }
+    
       // Update conversation state
       await db
         .insert(conversationStates)
@@ -87,12 +106,7 @@ export async function handleChatbotMessage(
 
     if (matchedOption) {
       // Send text answer
-      if (matchedOption.answer) {
-        await message.reply(matchedOption.answer);
-      }
-
-      // Send media if available
-      if (matchedOption.mediaUrl) {
+      if (matchedOption.answer && matchedOption.mediaUrl) {
         try {
           const response = await fetch(matchedOption.mediaUrl);
           if (!response.ok) {
@@ -105,12 +119,18 @@ export async function handleChatbotMessage(
 
           const media = new MessageMedia(mimeType, base64);
           await client.sendMessage(chatId, media, {
-            caption: `${matchedOption.optionLabel}`,
+            caption: `${matchedOption.answer}`,
           });
         } catch (error) {
           console.error('Error sending media:', error);
         }
       }
+      else if (matchedOption.answer) {
+        await message.reply(matchedOption.answer);
+      }
+
+      // Send media if available
+      
 
       // Update conversation state
       await db
@@ -136,57 +156,91 @@ export async function handleChatbotMessage(
 
 // API ENDPOINTS
 
-// Create or update chatbot
-router.post('/chatbot', async (req: Request, res: Response) => {
+// Create or update chatbot -> creates new chatbot if user doesn't have one, updates existing one, also takes care of whatsapp userId update.
+router.post('/chatbot', auth, async (req: Request, res: Response) => {
   try {
-    const { userId, welcomeMessage, isActive } = req.body;
+    const { userId, welcomeMessage, isActive, mediaUrl } = req.body;
+    console.log("chatbot");
+    console.log("userid-", userId, "WELCOME MESSAGE-", welcomeMessage, isActive, mediaUrl)
+    const { chatbotId } = req.user!;
+    const accountUserId = req.user?.id;
 
+    console.log("Yeaa boi");
     if (!userId || !welcomeMessage) {
       return res.status(400).json({
         error: 'userId and welcomeMessage are required',
       });
     }
-
+    let existing;
+    if(chatbotId) {
+      existing = await db
+        .select()
+        .from(chatbots)
+        .where(eq(chatbots.id, chatbotId))
+        .limit(1);
+        
+    }
     // Check if chatbot exists
-    const existing = await db
-      .select()
-      .from(chatbots)
-      .where(eq(chatbots.userId, userId))
-      .limit(1);
+    // const existing = await db
+    //   .select()
+    //   .from(chatbots)
+    //   .where(eq(chatbots.userId, userId))
+    //   .limit(1);
+        console.log("yea yea yea chat id", chatbotId); 
 
     let chatbot;
-    if (existing && existing.length > 0) {
+    if (existing && existing.length > 0 && chatbotId) {
+        console.log("chatbot existing binod"); 
+
       // Update existing
+      console.log("DUDE this is it", existing.length); 
       chatbot = await db
         .update(chatbots)
         .set({
           welcomeMessage,
+          userId,
+          mediaUrl,
           isActive: isActive !== undefined ? isActive : true,
           updatedAt: new Date(),
         })
-        .where(eq(chatbots.userId, userId))
+        .where(eq(chatbots.id, chatbotId))
         .returning();
+
     } else {
       // Create new
-      chatbot = await db
-        .insert(chatbots)
-        .values({
-          id: generateId('bot_'),
-          userId,
-          welcomeMessage,
-          isActive: isActive !== undefined ? isActive : true,
-        })
-        .returning();
+        const newChatbotId = generateId('bot_');
+        await db.transaction(async (txn) => {
+          // insert
+          chatbot = await txn
+            .insert(chatbots)
+            .values({
+              id: newChatbotId,
+              userId,
+              welcomeMessage,
+              isActive: isActive !== undefined ? isActive : true,
+            })
+          .returning();
+          // update
+          const result = await txn
+            .update(users)
+            .set({
+              chatbotId: newChatbotId
+            })
+            .where(eq(users.id, accountUserId!));
+
+          return result;
+        });
     }
 
-    res.json({
+   return res.status(200).json({
       success: true,
-      chatbot: chatbot[0],
-      message: existing.length > 0 ? 'Chatbot updated' : 'Chatbot created',
+      chatbot: chatbot![0],
+      message: existing!.length > 0 ? 'Chatbot updated' : 'Chatbot created',
     });
+
   } catch (error: any) {
     console.error('Error creating/updating chatbot:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create/update chatbot',
       details: error.message,
     });
@@ -194,14 +248,14 @@ router.post('/chatbot', async (req: Request, res: Response) => {
 });
 
 // Get chatbot by userId
-router.get('/chatbot/:userId', async (req: Request, res: Response) => {
+router.get('/chatbot', auth, async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const { chatbotId } = req.user!;
 
     const chatbot = await db
       .select()
       .from(chatbots)
-      .where(eq(chatbots.userId, userId!))
+      .where(eq(chatbots.id, chatbotId!))
       .limit(1);
 
     if (!chatbot || chatbot.length === 0) {
@@ -214,7 +268,7 @@ router.get('/chatbot/:userId', async (req: Request, res: Response) => {
       .select()
       .from(chatbotOptions)
       .where(eq(chatbotOptions.chatbotId, chatbot[0]!.id))
-      .orderBy(chatbotOptions.order);
+      .orderBy(chatbotOptions.optionKey);
 
     res.json({
       chatbot: chatbot[0],
@@ -230,10 +284,10 @@ router.get('/chatbot/:userId', async (req: Request, res: Response) => {
 });
 
 // Add or update chatbot option
-router.post('/chatbot/option', async (req: Request, res: Response) => {
+router.post('/chatbot/option', auth, async (req: Request, res: Response) => {
   try {
+    console.log("THIS IS IT BRO");
     const {
-      userId,
       optionKey,
       optionLabel,
       answer,
@@ -241,8 +295,15 @@ router.post('/chatbot/option', async (req: Request, res: Response) => {
       mediaType,
       order,
     } = req.body;
-
-    if (!userId || !optionKey || !optionLabel || !answer) {
+    const { chatbotId } = req.user!;
+    console.log( 
+      optionKey,
+      optionLabel,
+      answer,
+      mediaUrl,
+      mediaType,
+      order,)
+    if ( !optionKey || !optionLabel || !answer) {
       return res.status(400).json({
         error: 'userId, optionKey, optionLabel, and answer are required',
       });
@@ -252,7 +313,7 @@ router.post('/chatbot/option', async (req: Request, res: Response) => {
     const chatbot = await db
       .select()
       .from(chatbots)
-      .where(eq(chatbots.userId, userId))
+      .where(eq(chatbots.id, chatbotId!))
       .limit(1);
 
     if (!chatbot || chatbot.length === 0) {
@@ -261,7 +322,7 @@ router.post('/chatbot/option', async (req: Request, res: Response) => {
       });
     }
 
-    const chatbotId = chatbot[0]!.id;
+    // const chatbotId = chatbot[0]!.id;
 
     // Check if option exists
     const existing = await db
@@ -269,7 +330,7 @@ router.post('/chatbot/option', async (req: Request, res: Response) => {
       .from(chatbotOptions)
       .where(
         and(
-          eq(chatbotOptions.chatbotId, chatbotId),
+          eq(chatbotOptions.chatbotId, chatbotId!),
           eq(chatbotOptions.optionKey, optionKey)
         )
       )
@@ -296,7 +357,7 @@ router.post('/chatbot/option', async (req: Request, res: Response) => {
         .insert(chatbotOptions)
         .values({
           id: generateId('opt_'),
-          chatbotId,
+          chatbotId: chatbotId!,
           optionKey,
           optionLabel,
           answer,

@@ -4,6 +4,7 @@ export const chatbots = pgTable('chatbots', {
   id: varchar('id', { length: 255 }).primaryKey(),
   userId: varchar('user_id', { length: 255 }).notNull().unique(),
   welcomeMessage: text('welcome_message').notNull(),
+  mediaUrl: varchar('media_url'),
   isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
