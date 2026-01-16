@@ -160,12 +160,9 @@ export async function handleChatbotMessage(
 router.post('/chatbot', auth, async (req: Request, res: Response) => {
   try {
     const { userId, welcomeMessage, isActive, mediaUrl } = req.body;
-    console.log("chatbot");
-    console.log("userid-", userId, "WELCOME MESSAGE-", welcomeMessage, isActive, mediaUrl)
     const { chatbotId } = req.user!;
     const accountUserId = req.user?.id;
 
-    console.log("Yeaa boi");
     if (!userId || !welcomeMessage) {
       return res.status(400).json({
         error: 'userId and welcomeMessage are required',
@@ -181,19 +178,8 @@ router.post('/chatbot', auth, async (req: Request, res: Response) => {
         
     }
     // Check if chatbot exists
-    // const existing = await db
-    //   .select()
-    //   .from(chatbots)
-    //   .where(eq(chatbots.userId, userId))
-    //   .limit(1);
-        console.log("yea yea yea chat id", chatbotId); 
-
     let chatbot;
     if (existing && existing.length > 0 && chatbotId) {
-        console.log("chatbot existing binod"); 
-
-      // Update existing
-      console.log("DUDE this is it", existing.length); 
       chatbot = await db
         .update(chatbots)
         .set({
@@ -390,7 +376,7 @@ router.delete('/chatbot/option/:userId/:optionKey', async (req: Request, res: Re
     const chatbot = await db
       .select()
       .from(chatbots)
-      .where(eq(chatbots.userId, userId!))
+      .where(eq(chatbots.userId, userId! as string))
       .limit(1);
 
     if (!chatbot || chatbot.length === 0) {
@@ -404,7 +390,7 @@ router.delete('/chatbot/option/:userId/:optionKey', async (req: Request, res: Re
       .where(
         and(
           eq(chatbotOptions.chatbotId, chatbot[0]!.id),
-          eq(chatbotOptions.optionKey, optionKey!)
+          eq(chatbotOptions.optionKey, optionKey! as string)
         )
       );
 
@@ -433,7 +419,7 @@ router.patch('/chatbot/:userId/toggle', async (req: Request, res: Response) => {
         isActive,
         updatedAt: new Date(),
       })
-      .where(eq(chatbots.userId, userId!))
+      .where(eq(chatbots.userId, userId! as string))
       .returning();
 
     if (!chatbot || chatbot.length === 0) {
@@ -461,7 +447,7 @@ router.delete('/chatbot/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
-    await db.delete(chatbots).where(eq(chatbots.userId, userId!));
+    await db.delete(chatbots).where(eq(chatbots.userId, userId! as string));
 
     res.json({
       success: true,

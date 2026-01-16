@@ -308,6 +308,7 @@ async function initializeClient(userId: string): Promise<Client> {
 
 // Middleware to check if client exists and is ready
 function requireAuth(req: Request, res: Response, next: Function) {
+  console.log("WELL HERE I AM BROOO");
   const userId = req.body.userId || req.params.userId;
 
   if (!userId) {
@@ -378,7 +379,7 @@ app.get("/api/session/qr/:userId", async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
-    const clientData = clients.get(userId!);
+    const clientData = clients.get(userId! as string);
 
     if (!clientData) {
       return res.status(404).json({
@@ -420,7 +421,7 @@ app.get("/api/session/status/:userId", (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
-    const clientData = clients.get(userId!);
+    const clientData = clients.get(userId! as string);
 
     if (!clientData) {
       return res.json({
@@ -507,7 +508,7 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
     // Format phone number (country code + number without + or spaces)
     const chatId = digits + "@c.us";
     const sentMessage = await clientData.client.sendMessage(chatId, message);
-  
+    
     res.json({
       success: true,
       message: "Message sent successfully",
@@ -526,7 +527,7 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
 app.post("/api/message/send-many", requireAuth, async (req: Request, res: Response) => {
   try {
     const { userId, phones, message } = req.body;
-
+  
     if (!phones || !message) {
       return res.status(400).json({
         error: "phone and message are required",
