@@ -61,7 +61,7 @@ import path from "path";
 // import cors from "cors";
 import { fileURLToPath } from "url";
 import { randomBytes } from 'node:crypto';
-import chatbotRouter, { handleChatbotMessage } from './chatbot.js';
+import chatbotRouter, { handleChatbotMessage, setChatbotInactive } from './chatbot.js';
 import { auth } from "./middleware/auth.js";
 import dotenv from 'dotenv' ;
 
@@ -278,7 +278,7 @@ async function initializeClient(userId: string): Promise<Client> {
     }
   });
 
-  client.on("disconnected", (reason: string) => {
+  client.on("disconnected", async (reason: string) => {
     console.log(`⚠️ Client disconnected for user ${userId}:`, reason);
     const data = clients.get(userId);
     if (data) {
@@ -286,7 +286,10 @@ async function initializeClient(userId: string): Promise<Client> {
     }
     const currentClient = clients.get(userId);
     currentClient?.client.destroy();
-    clients.delete(userId);
+    
+    //turn off chatbot when whatsapp logged out.
+    await setChatbotInactive(userId);
+    
     saveSessionMetadata();
   });
 

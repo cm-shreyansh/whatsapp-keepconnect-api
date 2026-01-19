@@ -154,6 +154,29 @@ export async function handleChatbotMessage(
   }
 }
 
+export async function setChatbotInactive(userId: string) {
+   let existing;
+   if(userId) {
+      existing = await db
+        .select()
+        .from(chatbots)
+        .where(eq(chatbots.userId, userId))
+        .limit(1);
+   }
+    // Check if chatbot exists
+    let chatbot;
+    if (existing && existing.length > 0) {
+      chatbot = await db
+        .update(chatbots)
+        .set({
+          isActive: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(chatbots.id, existing[0]!.id!))
+        .returning();
+    }
+}
+
 // API ENDPOINTS
 
 // Create or update chatbot -> creates new chatbot if user doesn't have one, updates existing one, also takes care of whatsapp userId update.
