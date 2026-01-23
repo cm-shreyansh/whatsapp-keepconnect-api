@@ -261,6 +261,13 @@ router.get('/chatbot', auth, async (req: Request, res: Response) => {
   try {
     const { chatbotId } = req.user!;
 
+    if(chatbotId) {
+      res.status(200).json({
+        chatbot: null,
+        options: null,
+      })
+    }
+
     const chatbot = await db
       .select()
       .from(chatbots)
