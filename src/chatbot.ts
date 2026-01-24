@@ -1,4 +1,4 @@
-import { Router, type Request,type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { db } from './db.js'; // Your Drizzle DB instance
 import { chatbots, chatbotOptions, conversationStates } from './chatbot_schema.js';
 import { eq, and, asc } from 'drizzle-orm';
@@ -74,21 +74,36 @@ export async function handleChatbotMessage(
         await message.reply(activeChatbot.welcomeMessage);
       }
     
-      // Update conversation state
-      await db
-        .insert(conversationStates)
-        .values({
-          id: generateId('conv_'),
-          userId,
-          chatId,
-          lastMessageTime: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [conversationStates.chatId, conversationStates.userId],
-          set: {
+      // Update conversation state - MySQL doesn't support onConflictDoUpdate the same way
+      // We need to use INSERT ... ON DUPLICATE KEY UPDATE syntax
+      const existingConv = await db
+        .select()
+        .from(conversationStates)
+        .where(
+          and(
+            eq(conversationStates.chatId, chatId),
+            eq(conversationStates.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (existingConv && existingConv.length > 0) {
+        await db
+          .update(conversationStates)
+          .set({
             lastMessageTime: new Date(),
-          },
-        });
+          })
+          .where(eq(conversationStates.id, existingConv[0]!.id));
+      } else {
+        await db
+          .insert(conversationStates)
+          .values({
+            id: generateId('conv_'),
+            userId,
+            chatId,
+            lastMessageTime: new Date(),
+          });
+      }
       
       return;
     }
@@ -98,7 +113,7 @@ export async function handleChatbotMessage(
       .select()
       .from(chatbotOptions)
       .where(eq(chatbotOptions.chatbotId, activeChatbot.id))
-      .orderBy(chatbotOptions.order);
+      .orderBy(asc(chatbotOptions.order));
 
     const matchedOption = options.find(
       (opt) => opt.optionKey.toLowerCase() === messageBody.toLowerCase()
@@ -132,21 +147,35 @@ export async function handleChatbotMessage(
       // Send media if available
       
 
-      // Update conversation state
-      await db
-        .insert(conversationStates)
-        .values({
-          id: generateId('conv_'),
-          userId,
-          chatId,
-          lastMessageTime: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [conversationStates.chatId, conversationStates.userId],
-          set: {
+      // Update conversation state - MySQL doesn't support onConflictDoUpdate
+      const existingConv = await db
+        .select()
+        .from(conversationStates)
+        .where(
+          and(
+            eq(conversationStates.chatId, chatId),
+            eq(conversationStates.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (existingConv && existingConv.length > 0) {
+        await db
+          .update(conversationStates)
+          .set({
             lastMessageTime: new Date(),
-          },
-        });
+          })
+          .where(eq(conversationStates.id, existingConv[0]!.id));
+      } else {
+        await db
+          .insert(conversationStates)
+          .values({
+            id: generateId('conv_'),
+            userId,
+            chatId,
+            lastMessageTime: new Date(),
+          });
+      }
     }
     // If no match, don't reply (as per requirement #4)
   } catch (error) {
@@ -164,16 +193,23 @@ export async function setChatbotInactive(userId: string) {
         .limit(1);
    }
     // Check if chatbot exists
-    let chatbot;
     if (existing && existing.length > 0) {
-      chatbot = await db
+      await db
         .update(chatbots)
         .set({
           isActive: false,
           updatedAt: new Date(),
         })
+        .where(eq(chatbots.id, existing[0]!.id!));
+      
+      // Fetch updated chatbot if needed
+      const chatbot = await db
+        .select()
+        .from(chatbots)
         .where(eq(chatbots.id, existing[0]!.id!))
-        .returning();
+        .limit(1);
+      
+      return chatbot;
     }
 }
 
@@ -203,7 +239,7 @@ router.post('/chatbot', auth, async (req: Request, res: Response) => {
     // Check if chatbot exists
     let chatbot;
     if (existing && existing.length > 0 && chatbotId) {
-      chatbot = await db
+      await db
         .update(chatbots)
         .set({
           welcomeMessage,
@@ -212,39 +248,51 @@ router.post('/chatbot', auth, async (req: Request, res: Response) => {
           isActive: isActive !== undefined ? isActive : true,
           updatedAt: new Date(),
         })
+        .where(eq(chatbots.id, chatbotId));
+
+      // Fetch updated chatbot
+      chatbot = await db
+        .select()
+        .from(chatbots)
         .where(eq(chatbots.id, chatbotId))
-        .returning();
+        .limit(1);
 
     } else {
       // Create new
-        const newChatbotId = generateId('bot_');
-        await db.transaction(async (txn) => {
-          // insert
-          chatbot = await txn
-            .insert(chatbots)
-            .values({
-              id: newChatbotId,
-              userId,
-              welcomeMessage,
-              isActive: isActive !== undefined ? isActive : true,
-            })
-          .returning();
-          // update
-          const result = await txn
-            .update(users)
-            .set({
-              chatbotId: newChatbotId
-            })
-            .where(eq(users.id, accountUserId!));
+      const newChatbotId = generateId('bot_');
+      await db.transaction(async (txn) => {
+        // insert
+        await txn
+          .insert(chatbots)
+          .values({
+            id: newChatbotId,
+            userId,
+            welcomeMessage,
+            mediaUrl,
+            isActive: isActive !== undefined ? isActive : true,
+          });
+        
+        // update
+        await txn
+          .update(users)
+          .set({
+            chatbotId: newChatbotId
+          })
+          .where(eq(users.id, accountUserId!));
+      });
 
-          return result;
-        });
+      // Fetch created chatbot
+      chatbot = await db
+        .select()
+        .from(chatbots)
+        .where(eq(chatbots.id, newChatbotId))
+        .limit(1);
     }
 
    return res.status(200).json({
       success: true,
       chatbot: chatbot![0],
-      message: existing!.length > 0 ? 'Chatbot updated' : 'Chatbot created',
+      message: existing && existing.length > 0 ? 'Chatbot updated' : 'Chatbot created',
     });
 
   } catch (error: any) {
@@ -261,8 +309,8 @@ router.get('/chatbot', auth, async (req: Request, res: Response) => {
   try {
     const { chatbotId } = req.user!;
 
-    if(chatbotId) {
-      res.status(200).json({
+    if(!chatbotId) {
+      return res.status(200).json({
         chatbot: null,
         options: null,
       })
@@ -284,7 +332,7 @@ router.get('/chatbot', auth, async (req: Request, res: Response) => {
       .select()
       .from(chatbotOptions)
       .where(eq(chatbotOptions.chatbotId, chatbot[0]!.id))
-      .orderBy(chatbotOptions.optionKey);
+      .orderBy(asc(chatbotOptions.optionKey));
 
     res.json({
       chatbot: chatbot[0],
@@ -338,8 +386,6 @@ router.post('/chatbot/option', auth, async (req: Request, res: Response) => {
       });
     }
 
-    // const chatbotId = chatbot[0]!.id;
-
     // Check if option exists
     const existing = await db
       .select()
@@ -355,7 +401,7 @@ router.post('/chatbot/option', auth, async (req: Request, res: Response) => {
     let option;
     if (existing && existing.length > 0) {
       // Update
-      option = await db
+      await db
         .update(chatbotOptions)
         .set({
           optionLabel,
@@ -365,14 +411,21 @@ router.post('/chatbot/option', auth, async (req: Request, res: Response) => {
           order: order || 0,
           updatedAt: new Date(),
         })
+        .where(eq(chatbotOptions.id, existing[0]!.id));
+
+      // Fetch updated option
+      option = await db
+        .select()
+        .from(chatbotOptions)
         .where(eq(chatbotOptions.id, existing[0]!.id))
-        .returning();
+        .limit(1);
     } else {
       // Create
-      option = await db
+      const optionId = generateId('opt_');
+      await db
         .insert(chatbotOptions)
         .values({
-          id: generateId('opt_'),
+          id: optionId,
           chatbotId: chatbotId!,
           optionKey,
           optionLabel,
@@ -380,8 +433,14 @@ router.post('/chatbot/option', auth, async (req: Request, res: Response) => {
           mediaUrl: mediaUrl || null,
           mediaType: mediaType || null,
           order: order || 0,
-        })
-        .returning();
+        });
+
+      // Fetch created option
+      option = await db
+        .select()
+        .from(chatbotOptions)
+        .where(eq(chatbotOptions.id, optionId))
+        .limit(1);
     }
 
     res.json({
@@ -443,14 +502,20 @@ router.patch('/chatbot/:userId/toggle', async (req: Request, res: Response) => {
     const { userId } = req.params;
     const { isActive } = req.body;
 
-    const chatbot = await db
+    await db
       .update(chatbots)
       .set({
         isActive,
         updatedAt: new Date(),
       })
+      .where(eq(chatbots.userId, userId! as string));
+
+    // Fetch updated chatbot
+    const chatbot = await db
+      .select()
+      .from(chatbots)
       .where(eq(chatbots.userId, userId! as string))
-      .returning();
+      .limit(1);
 
     if (!chatbot || chatbot.length === 0) {
       return res.status(404).json({
