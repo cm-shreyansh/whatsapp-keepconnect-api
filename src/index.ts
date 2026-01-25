@@ -540,7 +540,11 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
     const clientData = clients.get(userId)!;
     const sentMessagesPromiseArr: Promise<any>[] = [];
     phones.forEach((item: String)=> {
-      const chatId = item.replace(/[^\d]/g, "") + "@c.us";
+      let phoneNumber = item.replace(/[^\d]/g, "");
+      if(phoneNumber.length === 10) {
+        phoneNumber = "91" + phoneNumber; 
+      }
+      const chatId = phoneNumber + "@c.us";
       const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, message)
       sentMessagesPromiseArr.push(sentMessagePromise);
     })
@@ -592,7 +596,11 @@ app.post("/api/message/send-many-image", requireAuth, async (req: Request, res: 
   
 
     phones.forEach((item: String)=> {
-      const chatId = item.replace(/[^\d]/g, "") + "@c.us";
+      let phoneNumber = item.replace(/[^\d]/g, "");
+      if(phoneNumber.length === 10) {
+        phoneNumber = "91" + phoneNumber; 
+      }
+      const chatId = phoneNumber + "@c.us";
       const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, media, {
         caption: message || "",
       });
@@ -630,10 +638,17 @@ app.post("/api/message/send-media", requireAuth, async (req: Request, res: Respo
         error: "phone and imageUrl are required",
       });
     }
-
+    
+    let phoneNumber = phone.replace(/[^\d]/g, "");
     const clientData = clients.get(userId)!;
-    const chatId = phone.replace(/[^\d]/g, "") + "@c.us";
+    
+    if(phoneNumber.length === 10) {
+      phoneNumber = "91" + phoneNumber;
+    }
+    
+    const chatId =  + "@c.us";
 
+    
     // Fetch image and convert to base64
     const response = await fetch(imageUrl);
     if (!response.ok) {
