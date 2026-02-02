@@ -646,7 +646,7 @@ app.post("/api/message/send-media", requireAuth, async (req: Request, res: Respo
       phoneNumber = "91" + phoneNumber;
     }
     
-    const chatId =  + "@c.us";
+    const chatId =  phoneNumber + "@c.us";
 
     
     // Fetch image and convert to base64
