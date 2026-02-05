@@ -658,10 +658,10 @@ app.post("/api/message/send-media", requireAuth, async (req: Request, res: Respo
 
     
     // Fetch image and convert to base64
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.statusText}`);
-    }
+    // const response = await fetch(imageUrl);
+    // if (!response.ok) {
+    //   throw new Error(`Failed to fetch image: ${response.statusText}`);
+    // }
 
     // const buffer = await response.arrayBuffer();
     // const base64 = Buffer.from(buffer).toString("base64");
