@@ -223,6 +223,14 @@ async function initializeClient(userId: string): Promise<Client> {
         "--no-first-run",
         "--no-zygote",
         "--disable-gpu",
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--no-experiments',
+        '--ignore-gpu-blacklist',
+        '--ignore-certificate-errors',
+        '--ignore-certificate-errors-spki-list',
+        '--log-level=3', 
+        '--enable-features=NetworkService'
       ],
     },
   });
@@ -655,11 +663,11 @@ app.post("/api/message/send-media", requireAuth, async (req: Request, res: Respo
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
 
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    const mimeType = response.headers.get("content-type") || "image/jpeg";
+    // const buffer = await response.arrayBuffer();
+    // const base64 = Buffer.from(buffer).toString("base64");
+    // const mimeType = response.headers.get("content-type") || "image/jpeg";
 
-    const media = new MessageMedia(mimeType, base64);
+    const media = await MessageMedia.fromUrl(imageUrl);
     const sentMessage = await clientData.client.sendMessage(chatId, media, {
       caption: caption || "",
     });
