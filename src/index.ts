@@ -591,16 +591,16 @@ app.post("/api/message/send-many-image", requireAuth, async (req: Request, res: 
     const sentMessagesPromiseArr: Promise<any>[] = [];
 
         // Fetch image and convert to base64
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.statusText}`);
-    }
+    // const response = await fetch(imageUrl);
+    // if (!response.ok) {
+    //   throw new Error(`Failed to fetch image: ${response.statusText}`);
+    // }
 
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    const mimeType = response.headers.get("content-type") || "image/jpeg";
+    // const buffer = await response.arrayBuffer();
+    // const base64 = Buffer.from(buffer).toString("base64");
+    // const mimeType = response.headers.get("content-type") || "image/jpeg";
 
-    const media = new MessageMedia(mimeType, base64);
+    const media = await MessageMedia.fromUrl(imageUrl);
   
 
     phones.forEach((item: String)=> {

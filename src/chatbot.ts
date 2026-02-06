@@ -57,16 +57,17 @@ export async function handleChatbotMessage(
     if (isGreeting(messageBody)) {
 
       if(activeChatbot.mediaUrl) {
-         const response = await fetch(activeChatbot.mediaUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch media: ${response.statusText}`);
-          }
+        //  const response = await fetch(activeChatbot.mediaUrl);
+        //   if (!response.ok) {
+        //     throw new Error(`Failed to fetch media: ${response.statusText}`);
+        //   }
 
-          const buffer = await response.arrayBuffer();
-          const base64 = Buffer.from(buffer).toString('base64');
-          const mimeType = response.headers.get('content-type') || 'image/jpeg';
+          // const buffer = await response.arrayBuffer();
+          // const base64 = Buffer.from(buffer).toString('base64');
+          // const mimeType = response.headers.get('content-type') || 'image/jpeg';
 
-          const media = new MessageMedia(mimeType, base64);
+          // const media = new MessageMedia(mimeType, base64);
+          const media = await MessageMedia.fromUrl(activeChatbot.mediaUrl);
           await client.sendMessage(chatId, media, {
             caption: `${activeChatbot.welcomeMessage}`,
           });
