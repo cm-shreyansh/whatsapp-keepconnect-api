@@ -108,6 +108,8 @@ interface ClientData {
   client: Client;
   status: SessionStatus;
   qrCode?: string;
+  interval?: NodeJS.Timeout;
+  isCleaning?: boolean; // 👈 ADD
 }
 
 type SessionStatus =
@@ -132,6 +134,25 @@ const clients = new Map<string, ClientData>();
 const SESSIONS_DIR = path.join(__dirname, ".wwebjs_auth");
 const SESSION_METADATA_FILE = path.join(__dirname, "sessions_metadata.json");
 
+process.on("uncaughtException", (err) => {
+  console.error("💥 UNCAUGHT EXCEPTION:", err.message);
+});
+
+process.on("unhandledRejection", (reason: any) => {
+  const msg = reason?.message || "";
+
+  if (
+    msg.includes("Target closed") ||
+    msg.includes("Execution context was destroyed") ||
+    msg.includes("Protocol error")
+  ) {
+    console.log("⚠️ Ignored Puppeteer internal error");
+    return;
+  }
+
+  console.error("💥 UNHANDLED REJECTION:", reason);
+});
+
 // Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -142,6 +163,26 @@ interface SessionMetadata {
   userId: string;
   lastActivity: string;
   status: SessionStatus;
+}
+
+async function safeExec(fn: Function) {
+  try {
+    return await fn();
+  } catch (err: any) {
+    const msg = err?.message || "";
+
+    if (
+      msg.includes("Target closed") ||
+      msg.includes("Execution context was destroyed") ||
+      msg.includes("Session closed") ||
+      msg.includes("Protocol error")
+    ) {
+      console.log("⚠️ Puppeteer session already dead");
+      return null;
+    }
+
+    throw err;
+  }
 }
 
 function loadSessionMetadata(): SessionMetadata[] {
@@ -265,6 +306,33 @@ async function initializeClient(userId: string): Promise<Client> {
       data.qrCode = "undefined";
       saveSessionMetadata();
     }
+    // 🔥 HEARTBEAT STARTS HERE
+    const interval = setInterval(async () => {
+      const clientData = clients.get(userId);
+
+      if (!clientData || clientData.isCleaning) {
+        clearInterval(interval);
+        return;
+      }
+
+      try {
+        const state = await safeExec(() =>
+          clientData.client.getState()
+        );
+
+        // 💡 IMPORTANT: null = already dead
+        if (!state || state !== "CONNECTED") {
+          console.log(`⚠️ Session dead for ${userId}:`, state);
+
+          clearInterval(interval);
+          await cleanupSession(userId);
+        }
+
+      } catch {
+        clearInterval(interval);
+        await cleanupSession(userId);
+      }
+    }, 60000);
   });
 
   client.on("authenticated", () => {
@@ -311,10 +379,52 @@ async function initializeClient(userId: string): Promise<Client> {
     await handleChatbotMessage(userId, message, client);
   });
 
+  client.on("change_state", async (state) => {
+    console.log(`STATE CHANGE for ${userId}:`, state);
+
+    if (
+      state === "UNPAIRED" ||
+      state === "UNPAIRED_IDLE" ||
+      state === "CONFLICT"
+    ) {
+      console.log(`⚠️ Logout detected via event for ${userId}`);
+      await cleanupSession(userId);
+    }
+  });
+
   await client.initialize();
   console.log(`Client initialization started for ${userId}`);
 
-  return client;
+}
+
+async function cleanupSession(userId: string) {
+  const data = clients.get(userId);
+  if (!data || data.isCleaning) return;
+
+  data.isCleaning = true;
+
+  console.log(`🧹 Cleaning session ${userId}`);
+
+  try {
+    if (data.interval) clearInterval(data.interval);
+
+    data.client.removeAllListeners();
+
+    data.client.logout();
+    data.client.destroy().catch(() => { });
+  } catch { }
+
+  clients.delete(userId);
+
+  const sessionPath = path.join(SESSIONS_DIR, `session-${userId}`);
+
+  // 🚀 async delete
+  fs.rm(sessionPath, { recursive: true, force: true }, () => { });
+
+  // 🚀 don't block
+  setChatbotInactive(userId).catch(() => { });
+
+  saveSessionMetadata();
 }
 
 // Middleware to check if client exists and is ready
