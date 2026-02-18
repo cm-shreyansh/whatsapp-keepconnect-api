@@ -307,32 +307,32 @@ async function initializeClient(userId: string): Promise<Client> {
       saveSessionMetadata();
     }
     // 🔥 HEARTBEAT STARTS HERE
-    const interval = setInterval(async () => {
-      const clientData = clients.get(userId);
+    // const interval = setInterval(async () => {
+    //   const clientData = clients.get(userId);
 
-      if (!clientData || clientData.isCleaning) {
-        clearInterval(interval);
-        return;
-      }
+    //   if (!clientData || clientData.isCleaning) {
+    //     clearInterval(interval);
+    //     return;
+    //   }
 
-      try {
-        const state = await safeExec(() =>
-          clientData.client.getState()
-        );
+    //   try {
+    //     const state = await safeExec(() =>
+    //       clientData.client.getState()
+    //     );
 
-        // 💡 IMPORTANT: null = already dead
-        if (!state || state !== "CONNECTED") {
-          console.log(`⚠️ Session dead for ${userId}:`, state);
+    //     // 💡 IMPORTANT: null = already dead
+    //     if (!state || state !== "CONNECTED") {
+    //       console.log(`⚠️ Session dead for ${userId}:`, state);
 
-          clearInterval(interval);
-          await cleanupSession(userId);
-        }
+    //       clearInterval(interval);
+    //       await cleanupSession(userId);
+    //     }
 
-      } catch {
-        clearInterval(interval);
-        await cleanupSession(userId);
-      }
-    }, 60000);
+    //   } catch {
+    //     clearInterval(interval);
+    //     await cleanupSession(userId);
+    //   }
+    // }, 60000);
   });
 
   client.on("authenticated", () => {
