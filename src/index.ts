@@ -109,7 +109,8 @@ interface ClientData {
   status: SessionStatus;
   qrCode?: string;
   interval?: NodeJS.Timeout;
-  isCleaning?: boolean; // 👈 ADD
+  isCleaning?: boolean;
+  lastActivity: number;
 }
 
 type SessionStatus =
@@ -239,6 +240,13 @@ async function loadExistingSessions() {
   }
 }
 
+function touchSession(userId: string) {
+  const data = clients.get(userId);
+  if (data) {
+    data.lastActivity = Date.now();
+  }
+}
+
 // Initialize a WhatsApp client for a user
 async function initializeClient(userId: string): Promise<Client> {
   if (clients.has(userId)) {
@@ -279,6 +287,7 @@ async function initializeClient(userId: string): Promise<Client> {
   const clientData: ClientData = {
     client,
     status: "initializing",
+    lastActivity: Date.now(), // 👈 ADD
   };
 
   clients.set(userId, clientData);
@@ -304,35 +313,9 @@ async function initializeClient(userId: string): Promise<Client> {
     if (data) {
       data.status = "ready";
       data.qrCode = "undefined";
+      data.lastActivity = Date.now();
       saveSessionMetadata();
     }
-    // 🔥 HEARTBEAT STARTS HERE
-    // const interval = setInterval(async () => {
-    //   const clientData = clients.get(userId);
-
-    //   if (!clientData || clientData.isCleaning) {
-    //     clearInterval(interval);
-    //     return;
-    //   }
-
-    //   try {
-    //     const state = await safeExec(() =>
-    //       clientData.client.getState()
-    //     );
-
-    //     // 💡 IMPORTANT: null = already dead
-    //     if (!state || state !== "CONNECTED") {
-    //       console.log(`⚠️ Session dead for ${userId}:`, state);
-
-    //       clearInterval(interval);
-    //       await cleanupSession(userId);
-    //     }
-
-    //   } catch {
-    //     clearInterval(interval);
-    //     await cleanupSession(userId);
-    //   }
-    // }, 60000);
   });
 
   client.on("authenticated", () => {
@@ -340,6 +323,7 @@ async function initializeClient(userId: string): Promise<Client> {
     const data = clients.get(userId);
     if (data) {
       data.status = "authenticated";
+      data.lastActivity = Date.now();
       saveSessionMetadata();
     }
   });
@@ -374,8 +358,8 @@ async function initializeClient(userId: string): Promise<Client> {
     //   from: message.from,
     //   body: message.body,
     // });
-
-        // Handle chatbot response
+    touchSession(userId); // 👈 ADD
+    // Handle chatbot response
     await handleChatbotMessage(userId, message, client);
   });
 
@@ -410,23 +394,25 @@ async function cleanupSession(userId: string) {
 
     data.client.removeAllListeners();
 
-    data.client.logout();
-    data.client.destroy().catch(() => { });
-  } catch { }
+    await safeExec(() => data.client.logout()); // 👈 safer
+    await safeExec(() => data.client.destroy()); // 👈 safer
+  } catch (err) {
+    console.log("⚠️ Cleanup error ignored");
+  }
 
   clients.delete(userId);
 
   const sessionPath = path.join(SESSIONS_DIR, `session-${userId}`);
 
-  // 🚀 async delete
-  fs.rm(sessionPath, { recursive: true, force: true }, () => { });
+  fs.rm(sessionPath, { recursive: true, force: true }, (err) => {
+    if (err) console.error("❌ Failed to delete session folder:", err);
+    else console.log(`🗑 Deleted session folder for ${userId}`);
+  });
 
-  // 🚀 don't block
-  setChatbotInactive(userId).catch(() => { });
+  setChatbotInactive(userId).catch(() => {});
 
   saveSessionMetadata();
 }
-
 // Middleware to check if client exists and is ready
 function requireAuth(req: Request, res: Response, next: Function) {
   console.log("WELL HERE I AM BROOO");
@@ -872,6 +858,33 @@ process.on("SIGINT", async () => {
 
   process.exit(0);
 });
+
+const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes
+const CHECK_INTERVAL = 60 * 1000; // check every 1 min
+
+setInterval(async () => {
+  console.log("🔍 Checking inactive NON-READY sessions...");
+
+  const now = Date.now();
+
+  for (const [userId, data] of clients.entries()) {
+    // ✅ skip early
+    if (data.isCleaning) continue;
+    if (data.status === "ready") continue; // 👈 SKIP logged-in sessions
+
+    const last = data.lastActivity || 0;
+    const inactiveTime = now - last;
+
+    console.log(
+      `⏱ ${userId} [${data.status}] inactive for ${Math.floor(inactiveTime / 1000)}s`
+    );
+
+    if (inactiveTime >= INACTIVITY_LIMIT) {
+      console.log(`Cleaning inactive NON-READY session: ${userId}`);
+      await cleanupSession(userId);
+    }
+  }
+}, CHECK_INTERVAL);
 
 // Start server
 const PORT = process.env.PORT || 3456;
