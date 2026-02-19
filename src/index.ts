@@ -394,8 +394,9 @@ async function cleanupSession(userId: string) {
 
     data.client.removeAllListeners();
 
-    await safeExec(() => data.client.logout()); // 👈 safer
-    await safeExec(() => data.client.destroy()); // 👈 safer
+    await safeExec(() => data.client.logout());
+    await safeExec(() => data.client.destroy());
+    clients.delete(userId);
   } catch (err) {
     console.log("⚠️ Cleanup error ignored");
   }
