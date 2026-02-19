@@ -247,6 +247,14 @@ function touchSession(userId: string) {
   }
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRandomDelay(min = 2000, max = 7000) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // Initialize a WhatsApp client for a user
 async function initializeClient(userId: string): Promise<Client> {
   if (clients.has(userId)) {
@@ -635,7 +643,7 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
 app.post("/api/message/send-many", requireAuth, async (req: Request, res: Response) => {
   try {
     const { userId, phones, message } = req.body;
-  
+
     if (!phones || !message) {
       return res.status(400).json({
         error: "phone and message are required",
@@ -643,28 +651,37 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
     }
 
     const clientData = clients.get(userId)!;
-    const sentMessagesPromiseArr: Promise<any>[] = [];
-    phones.forEach((item: String)=> {
-      let phoneNumber = item.replace(/[^\d]/g, "");
-      if(phoneNumber.length === 10) {
-        phoneNumber = "91" + phoneNumber; 
+
+    // 🔥 run in background (don’t block response)
+    (async () => {
+      for (const item of phones) {
+        try {
+          let phoneNumber = item.replace(/[^\d]/g, "");
+
+          if (phoneNumber.length === 10) {
+            phoneNumber = "91" + phoneNumber;
+          }
+
+          const chatId = phoneNumber + "@c.us";
+
+          await clientData.client.sendMessage(chatId, message);
+
+          const randomDelay = getRandomDelay(2000, 7000);
+
+          await delay(randomDelay);
+        } catch (err) {
+          console.error(`❌ Failed for ${item}`, err);
+        }
       }
-      const chatId = phoneNumber + "@c.us";
-      const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, message)
-      sentMessagesPromiseArr.push(sentMessagePromise);
-    })
-    // Format phone number (country code + number without + or spaces)
-    Promise.allSettled(sentMessagesPromiseArr).then(
-      (results)=> {
-        console.log(results);
-      }
-    ).catch((e)=> {
-      console.log("Error occured in send-many route")
-    })
+
+      console.log("✅ All messages processed");
+    })();
 
     res.json({
       success: true,
+      message: "Message sending started",
     });
+
   } catch (error: any) {
     console.error("Send message error:", error);
     res.status(500).json({
