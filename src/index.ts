@@ -247,6 +247,14 @@ function touchSession(userId: string) {
   }
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRandomDelay(min = 2000, max = 7000) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // Initialize a WhatsApp client for a user
 async function initializeClient(userId: string): Promise<Client> {
   if (clients.has(userId)) {
@@ -394,8 +402,9 @@ async function cleanupSession(userId: string) {
 
     data.client.removeAllListeners();
 
-    await safeExec(() => data.client.logout()); // 👈 safer
-    await safeExec(() => data.client.destroy()); // 👈 safer
+    await safeExec(() => data.client.logout());
+    await safeExec(() => data.client.destroy());
+    clients.delete(userId);
   } catch (err) {
     console.log("⚠️ Cleanup error ignored");
   }
@@ -634,7 +643,7 @@ app.post("/api/message/send", requireAuth, async (req: Request, res: Response) =
 app.post("/api/message/send-many", requireAuth, async (req: Request, res: Response) => {
   try {
     const { userId, phones, message } = req.body;
-  
+
     if (!phones || !message) {
       return res.status(400).json({
         error: "phone and message are required",
@@ -642,28 +651,37 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
     }
 
     const clientData = clients.get(userId)!;
-    const sentMessagesPromiseArr: Promise<any>[] = [];
-    phones.forEach((item: String)=> {
-      let phoneNumber = item.replace(/[^\d]/g, "");
-      if(phoneNumber.length === 10) {
-        phoneNumber = "91" + phoneNumber; 
+
+    // 🔥 run in background (don’t block response)
+    (async () => {
+      for (const item of phones) {
+        try {
+          let phoneNumber = item.replace(/[^\d]/g, "");
+
+          if (phoneNumber.length === 10) {
+            phoneNumber = "91" + phoneNumber;
+          }
+
+          const chatId = phoneNumber + "@c.us";
+
+          await clientData.client.sendMessage(chatId, message);
+
+          const randomDelay = getRandomDelay(2000, 7000);
+
+          await delay(randomDelay);
+        } catch (err) {
+          console.error(`❌ Failed for ${item}`, err);
+        }
       }
-      const chatId = phoneNumber + "@c.us";
-      const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, message)
-      sentMessagesPromiseArr.push(sentMessagePromise);
-    })
-    // Format phone number (country code + number without + or spaces)
-    Promise.allSettled(sentMessagesPromiseArr).then(
-      (results)=> {
-        console.log(results);
-      }
-    ).catch((e)=> {
-      console.log("Error occured in send-many route")
-    })
+
+      console.log("✅ All messages processed");
+    })();
 
     res.json({
       success: true,
+      message: "Message sending started",
     });
+
   } catch (error: any) {
     console.error("Send message error:", error);
     res.status(500).json({
@@ -675,53 +693,67 @@ app.post("/api/message/send-many", requireAuth, async (req: Request, res: Respon
 
 app.post("/api/message/send-many-image", requireAuth, async (req: Request, res: Response) => {
   try {
-    const { userId, phones, message , imageUrl} = req.body;
+    const { userId, phones, message, imageUrl } = req.body;
 
-    if (!phones || !message) {
+    if (!phones || !message || !imageUrl) {
       return res.status(400).json({
-        error: "phone and message are required",
+        error: "phones, message and imageUrl are required",
       });
     }
 
     const clientData = clients.get(userId)!;
-    const sentMessagesPromiseArr: Promise<any>[] = [];
 
-        // Fetch image and convert to base64
-    // const response = await fetch(imageUrl);
-    // if (!response.ok) {
-    //   throw new Error(`Failed to fetch image: ${response.statusText}`);
-    // }
-
-    // const buffer = await response.arrayBuffer();
-    // const base64 = Buffer.from(buffer).toString("base64");
-    // const mimeType = response.headers.get("content-type") || "image/jpeg";
-
+    // preload media once (important for performance)
     const media = await MessageMedia.fromUrl(imageUrl);
-  
 
-    phones.forEach((item: String)=> {
-      let phoneNumber = item.replace(/[^\d]/g, "");
-      if(phoneNumber.length === 10) {
-        phoneNumber = "91" + phoneNumber; 
+    // 🔥 run in background
+    (async () => {
+      for (let i = 0; i < phones.length; i++) {
+        const item = phones[i];
+
+        try {
+          let phoneNumber = item.replace(/[^\d]/g, "");
+
+          if (phoneNumber.length === 10) {
+            phoneNumber = "91" + phoneNumber;
+          }
+
+          const chatId = phoneNumber + "@c.us";
+
+          // 🔥 optional: typing simulation
+          try {
+            const chat = await clientData.client.getChatById(chatId);
+            await chat.sendStateTyping();
+            await delay(getRandomDelay(1000, 3000));
+          } catch {}
+
+          await clientData.client.sendMessage(chatId, media, {
+            caption: message || "",
+          });
+
+          // 🔥 random delay
+          const randomDelay = getRandomDelay(3000, 8000);
+
+          await delay(randomDelay);
+
+          // 🔥 long break every 5 messages
+          if ((i + 1) % 5 === 0) {
+            const longBreak = getRandomDelay(10000, 20000);
+            console.log(`🛑 Taking long break ${longBreak}ms`);
+            await delay(longBreak);
+          }
+
+        } catch (err) {
+          console.error(`❌ Failed for ${item}`, err);
+        }
       }
-      const chatId = phoneNumber + "@c.us";
-      const sentMessagePromise: Promise<any> = clientData.client.sendMessage(chatId, media, {
-        caption: message || "",
-      });
-      sentMessagesPromiseArr.push(sentMessagePromise);
-    });
-    // Format phone number (country code + number without + or spaces)
-    Promise.allSettled(sentMessagesPromiseArr).then(
-      (results)=> {
-        console.log(results);
-      }
-    ).catch((e)=> {
-      console.log("Error occured in send-many route")
-    })
+    })();
 
     res.json({
       success: true,
+      message: "Image sending started",
     });
+
   } catch (error: any) {
     console.error("Send message error:", error);
     res.status(500).json({
@@ -730,7 +762,6 @@ app.post("/api/message/send-many-image", requireAuth, async (req: Request, res: 
     });
   }
 });
-
 
 // Send message with image
 app.post("/api/message/send-media", requireAuth, async (req: Request, res: Response) => {
