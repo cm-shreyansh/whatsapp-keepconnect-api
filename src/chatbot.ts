@@ -19,7 +19,7 @@ function generateId(prefix: string = ''): string {
 
 // Normalize greeting messages
 function isGreeting(message: string): boolean {
-  const greetings = ['hi', 'hello', 'hey', 'hii', 'hiii', 'hiiii', 'helo', 'hola'];
+  const greetings = ['hi', 'hello', 'hey', 'hii', 'hiii', 'hiiii', 'helo', 'hiiiii', 'hey', 'yo', 'ok', 'done', 'yes','k','0'];
   const normalized = message.toLowerCase().trim();
   return greetings.includes(normalized);
 }
